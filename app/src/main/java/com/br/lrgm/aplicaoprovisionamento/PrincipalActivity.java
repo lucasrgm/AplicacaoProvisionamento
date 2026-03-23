@@ -17,15 +17,27 @@ public class PrincipalActivity extends AppCompatActivity {
     private EditText campoTexto;
 
     private void atualizarTexto(){
-        try{
-            String valor = this.campoTexto.getText().toString();
-            this.texto.setText(valor);
-        } catch (Exception e) {
+        String valor = this.campoTexto.getText().toString().toLowerCase().trim();
 
-            Toast.makeText(this, "Erro tal, tente novamente", Toast.LENGTH_LONG).show();
+        this.texto.setText(valor);
+
+        switch(valor){
+            case "roxo":
+                this.imagem.setImageResource(R.drawable.roxo);
+                break;
+
+            case "amarelo":
+                this.imagem.setImageResource(R.drawable.amarelo);
+                break;
+
+            case "verde":
+                this.imagem.setImageResource(R.drawable.verde);
+                break;
+
+            default:
+                Toast.makeText(this, "Cor inválida!", Toast.LENGTH_SHORT).show();
+                break;
         }
-
-
     }
 
     @Override
@@ -61,7 +73,4 @@ public class PrincipalActivity extends AppCompatActivity {
 //                break;
 //        }
     }
-
-
-
 }

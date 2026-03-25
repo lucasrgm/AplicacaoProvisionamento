@@ -11,16 +11,14 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
-
+        android:orientation="vertical"
+        android:padding="16dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginEnd="16dp"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:layout_marginBottom="24dp">
 
             <TextView
                 android:id="@+id/wifi2"
@@ -28,29 +26,30 @@
                 android:layout_height="wrap_content"
                 android:text="WiFi 2.4Ghz"
                 android:textColor="#000000"
-                android:textSize="34sp" />
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp" />
 
             <EditText
                 android:id="@+id/ssid"
-                android:layout_width="300dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ems="10"
-                android:inputType="text"
-                android:text="SSID" />
+                android:hint="SSID"
+                android:layout_marginBottom="8dp" />
 
             <EditText
                 android:id="@+id/pass"
-                android:layout_width="300dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ems="10"
-                android:inputType="text"
-                android:text="Pass" />
+                android:hint="Senha WiFi"
+                android:inputType="textPassword" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:layout_marginBottom="24dp">
 
             <TextView
                 android:id="@+id/autenticacao"
@@ -58,30 +57,31 @@
                 android:layout_height="wrap_content"
                 android:text="Autenticação"
                 android:textColor="#000000"
-                android:textSize="34sp" />
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp" />
 
             <EditText
                 android:id="@+id/pppoe"
-                android:layout_width="300dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ems="10"
-                android:inputType="text"
-                android:text="PPPoE" />
+                android:hint="PPPoE"
+                android:layout_marginBottom="8dp" />
 
             <EditText
                 android:id="@+id/password"
-                android:layout_width="300dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:ems="10"
-                android:inputType="text"
-                android:text="Password" />
+                android:hint="Senha PPPoE"
+                android:inputType="textPassword" />
         </LinearLayout>
 
         <Button
             android:id="@+id/botaoEnviar"
             android:layout_width="200dp"
             android:layout_height="60dp"
-            android:text="ENVIAR" />
+            android:text="ENVIAR"
+            android:layout_gravity="center_horizontal" />
 
     </LinearLayout>
 

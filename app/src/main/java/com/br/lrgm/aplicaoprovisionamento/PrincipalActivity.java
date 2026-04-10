@@ -1,76 +1,124 @@
 package com.br.lrgm.aplicaoprovisionamento;
 
+import android.app.AlertDialog;
+import android.app.ProgressDialog;
+import android.content.DialogInterface;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.br.lrgm.aplicaoprovisionamento.http.HttpRequests;
+
 public class PrincipalActivity extends AppCompatActivity {
 
-    private ImageView imagem;
-    private TextView texto;
-    private EditText campoTexto;
+    private int contador;
 
-    private void atualizarTexto(){
-        String valor = this.campoTexto.getText().toString().toLowerCase().trim();
+    private LinearLayout layout5g, mainLayout;
 
-        this.texto.setText(valor);
+    ProgressBar
+            loadingLayout;
+    private Button botaoEnviar;
 
-        switch(valor){
-            case "roxo":
-                this.imagem.setImageResource(R.drawable.roxo);
-                break;
+    private EditText ssid1, ssid2, password1, password2;
 
-            case "amarelo":
-                this.imagem.setImageResource(R.drawable.amarelo);
-                break;
+    private EditText pppoe, passpppoe;
 
-            case "verde":
-                this.imagem.setImageResource(R.drawable.verde);
-                break;
+    private void preencherCampos(EditText campo1, EditText campo2, String valorCampo1, String valorCampo2) {
+        campo1.setText(valorCampo1);
+        campo2.setText(valorCampo2);
+    }
 
-            default:
-                Toast.makeText(this, "Cor inválida!", Toast.LENGTH_SHORT).show();
-                break;
-        }
+    private void preencherCampos(EditText campo1, String valorCampo1) {
+        campo1.setText(valorCampo1);
+
+    }
+
+    private void mostrarLayout(View v, boolean mostrar) {
+        v.setVisibility(mostrar ? View.VISIBLE : View.GONE);
+    }
+
+    private void mostrarErro(String mensagem) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setMessage(mensagem);
+        builder.setTitle("Atenção!");
+        builder.setNegativeButton("Cancelar", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.dismiss();
+                PrincipalActivity.this.finish();
+            }
+        });
+        builder.setPositiveButton("Tentar novamente", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                contador++;
+                dialog.dismiss();
+                simular();
+            }
+        });
+
+        builder.create().show();
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_principal);
+        this.mainLayout = findViewById(R.id.mainLayout);
+        this.layout5g = findViewById(R.id.layout_wifi2);
+        this.botaoEnviar = findViewById(R.id.botaoEnviar);
+        this.ssid1 = findViewById(R.id.ssid1);
+        this.password1 = findViewById(R.id.password1);
+        this.ssid2 = findViewById(R.id.ssid2);
+        this.password2 = findViewById(R.id.password2);
+        this.pppoe = findViewById(R.id.pppoe);
+        this.passpppoe = findViewById(R.id.passpppoe);
+        this.loadingLayout = findViewById(R.id.progressBar);
 
-        this.imagem = (ImageView) this.findViewById(R.id.imagemRoxa);
-        this.texto = (TextView) this.findViewById(R.id.txt_hello);
-        this.campoTexto = (EditText) this.findViewById(R.id.campoTexto);
+        //
 
-        Button btn2 = (Button) this.findViewById(R.id.button3);
+        this.botaoEnviar.setOnClickListener(new View.OnClickListener() {
 
-        btn2.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-
-                atualizarTexto();
-
+                new HttpRequests(PrincipalActivity.this).login("Lucas", "12345");
 
             }
         });
 
-//        String cor = "roxo";
-//        switch(cor){
-//            case "roxo":
-//                //muda pra roxo;
-//                break;
-//            case "amarelo":
-//                //muda pra amarelo
-//                break;
-//            default:
-//                break;
-//        }
+        mostrarLayout(loadingLayout,false);
+        mostrarLayout(mainLayout,true);
+
+    }
+
+    private void
+    simular() {
+        Handler
+                handler = new Handler(Looper.getMainLooper());
+
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (contador < 3){
+                    mostrarLayout(loadingLayout,true);
+                    mostrarLayout(mainLayout,false);
+                    mostrarErro("Erro,tente novamente! Tentativas: "+contador);
+                } else{
+                    contador=0;
+                    mostrarLayout(loadingLayout,false);
+                    mostrarLayout(mainLayout,true);
+                }
+            }
+        }, 3000);
     }
 }

@@ -1,4 +1,8 @@
 package com.br.lrgm.aplicaoprovisionamento;
 
-public class RouterConfig {
+import androidx.annotation.NonNull;
+
+public class RouterConfig{
+
+
 }

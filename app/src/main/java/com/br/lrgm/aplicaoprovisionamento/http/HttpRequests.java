@@ -52,11 +52,111 @@ public class HttpRequests {
     }
     private void obterParametros(){
 
-    }
-    private void alterarWifi(){
+        if (this.token == null) {
+            Log.e("http", "Token não definido!");
+            return;
+        }
 
-    }
-    private void alterarPppoe(){
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
 
+        executorService.execute(() -> {
+
+            OkHttpClient client = new OkHttpClient();
+
+            try {
+                Request request = new Request.Builder()
+                        .url(endpoint + "/parametros")
+                        .addHeader("token_autenticacao", this.token)
+                        .get()
+                        .build();
+
+                try (Response response = client.newCall(request).execute()) {
+                    String resultado = response.body().string();
+                    Log.i("retornohttp_parametros", resultado + "");
+                }
+
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+        });
+    }
+
+    private void alterarWifi(String ssid, String password){
+
+        if (this.token == null) {
+            Log.e("http", "Token não definido!");
+            return;
+        }
+
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+        executorService.execute(() -> {
+
+            OkHttpClient client = new OkHttpClient();
+
+            try {
+                String json = "{ \"ssid\": \"" + ssid + "\", \"senha\": \"" + password + "\" }";
+
+                RequestBody body = RequestBody.create(
+                        json,
+                        MediaType.get("application/json")
+                );
+
+                Request request = new Request.Builder()
+                        .url(endpoint + "/wifi")
+                        .addHeader("token_autenticacao", this.token)
+                        .post(body)
+                        .build();
+
+                try (Response response = client.newCall(request).execute()) {
+                    String resultado = response.body().string();
+                    Log.i("retornohttp_wifi", resultado + "");
+                }
+
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+        });
+    }
+
+    private void alterarPppoe(String username, String password){
+
+        if (this.token == null) {
+            Log.e("http", "Token não definido!");
+            return;
+        }
+
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+        executorService.execute(() -> {
+
+            OkHttpClient client = new OkHttpClient();
+
+            try {
+                String json = "{ \"usuario\": \"" + username + "\", \"senha\": \"" + password + "\" }";
+
+                RequestBody body = RequestBody.create(
+                        json,
+                        MediaType.get("application/json")
+                );
+
+                Request request = new Request.Builder()
+                        .url(endpoint + "/pppoe")
+                        .addHeader("token_autenticacao", this.token)
+                        .post(body)
+                        .build();
+
+                try (Response response = client.newCall(request).execute()) {
+                    String resultado = response.body().string();
+                    Log.i("retornohttp_pppoe", resultado + "");
+                }
+
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+        });
     }
 }

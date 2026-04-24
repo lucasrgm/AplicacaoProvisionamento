@@ -2,4 +2,8 @@
     <string name="app_name">AplicaçãoProvisionamento</string>
     <string name="senha_wifi">Senha Wifi</string>
     <string name="endpoint_url">http://192.168.169.128:3002</string>
+    <string name="acessar">Acessar</string>
+    <string name="usuario">Usuário</string>
+    <string name="senha">Senha</string>
+    <string name="login">Acesso do Sistema</string>
 </resources>

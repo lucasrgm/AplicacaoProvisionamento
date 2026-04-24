@@ -2,10 +2,6 @@ package com.br.lrgm.aplicaoprovisionamento;
 
 import androidx.annotation.NonNull;
 
-public class RouterConfig<T>{
-
-
-    public  T get(T   r){
-        return  r;
-    }
+public class Wifi{
+    public String ssid, band, password;
 }

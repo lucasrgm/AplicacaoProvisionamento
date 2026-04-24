@@ -1,5 +1,6 @@
 package com.br.lrgm.aplicaoprovisionamento.http;
 
+import android.app.Activity;
 import android.content.Context;
 import android.util.Log;
 
@@ -8,6 +9,7 @@ import com.br.lrgm.aplicaoprovisionamento.R;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -17,16 +19,18 @@ import okhttp3.Response;
 
 public class HttpRequests {
     private String  endpoint;
-    private Context context;
+    private Activity context;
     String  token;
-    public HttpRequests(Context context) {
+    public HttpRequests(Activity context) {
         this.context = context;
         this.endpoint=context.getString(R.string.endpoint_url);
-
+        this.token = ArmazenamentoLocal.obterToken(context);
     }
-    public void login(String username, String password) {
+    public void login(String username, String password,HttpEscutas escutas) {
 
         ExecutorService executorService= Executors.newSingleThreadExecutor();
+
+        escutas.quandoInicia();
 
         executorService.execute(()-> {
 
@@ -42,20 +46,59 @@ public class HttpRequests {
                 try (Response response = Client.newCall(request).execute()) {
                     String resultado = response.body().string();
                     Log.i("retornohttp", resultado + "");
+                    if(resultado.contains("error")){
+
+                        escutas.quandoErro(resultado);
+                    }else{
+                        //extrair o token
+                        try {
+                            org.json.JSONObject json = new org.json.JSONObject(resultado);
+
+                            if (json.has("token")) {
+                                this.token = json.getString("token");
+                                Log.i("TOKEN", this.token);
+                                escutas.quandoSucesso(this.token);
+                            } else {
+                                Log.e("TOKEN", "Token não encontrado na resposta");
+                                throw new Exception("Token não encontrado. Não foi possível autenticar!");
+                            }
+
+                        } catch (Exception e) {
+                            Log.e("TOKEN", "Erro ao extrair token", e);
+                            escutas.quandoErro(e.getMessage());
+                        }
+
+
+                    }
                 }
             } catch (Exception e) {
-
-                throw new RuntimeException(e);
+                Log.e("TOKEN", e.getMessage());
+                escutas.quandoErro("Erro interno, tente novamente!");
+                //throw new RuntimeException(e);
             }
+
+            escutas.quandoFinaliza();
 
         });
     }
-    private void obterParametros(){
 
-        if (this.token == null) {
-            Log.e("http", "Token não definido!");
-            return;
+    private void filtroRequest(OkHttpClient client, Request request, HttpEscutas escutas)throws Exception{
+        try (Response response = client.newCall(request).execute()) {
+            if(response.code()==401) {
+                escutas.quandoLoginExpirado();
+            }else{
+
+                String resultado = response.body().string();
+                Log.i("retornohttp_parametros", resultado + "");
+                escutas.quandoSucesso(resultado);
+            }
         }
+    }
+    public void obterParametros(String ip, String porta, HttpEscutas escutas){
+
+        escutas.quandoInicia();
+
+       if(!validarAcesso(ip,porta,escutas)) return;
 
         ExecutorService executorService = Executors.newSingleThreadExecutor();
 
@@ -65,27 +108,59 @@ public class HttpRequests {
 
             try {
                 Request request = new Request.Builder()
-                        .url(endpoint + "/parametros")
+                        .url(endpoint + "/obterParametros?ip="+ip+"&porta="+porta)
                         .addHeader("token_autenticacao", this.token)
                         .get()
                         .build();
 
-                try (Response response = client.newCall(request).execute()) {
-                    String resultado = response.body().string();
-                    Log.i("retornohttp_parametros", resultado + "");
-                }
+                    filtroRequest(client, request, escutas);
 
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                escutas.quandoErro(e.getMessage());
+                //throw new RuntimeException(e);
             }
-
+            escutas.quandoFinaliza();
         });
     }
+    private boolean validarAcesso(String ip, String porta,HttpEscutas   escutas){
+        if(!ip.matches("^\\d+.\\d+.\\d+.\\d+")){
 
-    private void alterarWifi(String ssid, String password){
+            escutas.quandoErro("Endereço ip inválido!");
+            escutas.quandoFinaliza();
+            return  false;
+        }
 
-        if (this.token == null) {
+        if(!porta.matches("^\\d{0,5}")){
+
+            escutas.quandoErro("Porta inválida!");
+            escutas.quandoFinaliza();
+            return  false;
+        }
+
+        if (this.token.isEmpty()) {
             Log.e("http", "Token não definido!");
+            escutas.quandoLoginExpirado();
+            escutas.quandoFinaliza();
+            return  false;
+        }
+
+        return true;
+    }
+    public void alterarWifi(String  ip,String porta,String ssid, String password,int network, HttpEscutas escutas){
+
+        escutas.quandoInicia();
+
+        if(!validarAcesso(ip,porta,escutas))    return;
+
+        if (ssid.isEmpty()){
+            escutas.quandoErro("SSID não pode ser vazio!");
+            escutas.quandoFinaliza();
+            return;
+        }
+
+        if (password.isEmpty() || password.length() <  8){
+            escutas.quandoErro("Senha precisa ter no mínimo 8 dígitos!");
+            escutas.quandoFinaliza();
             return;
         }
 
@@ -93,10 +168,10 @@ public class HttpRequests {
 
         executorService.execute(() -> {
 
-            OkHttpClient client = new OkHttpClient();
+            OkHttpClient client = new OkHttpClient.Builder().connectTimeout(36000,TimeUnit.MILLISECONDS).callTimeout(36000, TimeUnit.MILLISECONDS).readTimeout(36000, TimeUnit.MILLISECONDS).build();
 
             try {
-                String json = "{ \"ssid\": \"" + ssid + "\", \"senha\": \"" + password + "\" }";
+                String json = "{ \"network\": \"" + network + "\" , \"ssid\": \"" + ssid + "\", \"senha\": \"" + password + "\", \"ip\": \"" + ip + "\", \"porta\": \"" + porta + "\" }";
 
                 RequestBody body = RequestBody.create(
                         json,
@@ -104,27 +179,36 @@ public class HttpRequests {
                 );
 
                 Request request = new Request.Builder()
-                        .url(endpoint + "/wifi")
+                        .url(endpoint + "/alterarWifi")
                         .addHeader("token_autenticacao", this.token)
                         .post(body)
                         .build();
 
-                try (Response response = client.newCall(request).execute()) {
-                    String resultado = response.body().string();
-                    Log.i("retornohttp_wifi", resultado + "");
-                }
+                filtroRequest(client, request, escutas);
 
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                escutas.quandoErro(e.getMessage());
+                //throw new RuntimeException(e);
             }
-
+            escutas.quandoFinaliza();
         });
     }
 
-    private void alterarPppoe(String username, String password){
+    public void alterarPppoe(String ip, String porta, String username, String password, HttpEscutas escutas){
 
-        if (this.token == null) {
-            Log.e("http", "Token não definido!");
+        escutas.quandoInicia();
+
+        if(!validarAcesso(ip,porta,escutas)) return;
+
+        if (username.isEmpty()){
+            escutas.quandoErro("Usuário não pode ser vazio!");
+            escutas.quandoFinaliza();
+            return;
+        }
+
+        if (password.isEmpty() || password.length() <  8){
+            escutas.quandoErro("Senha precisa ter no mínimo 8 dígitos!");
+            escutas.quandoFinaliza();
             return;
         }
 
@@ -132,10 +216,14 @@ public class HttpRequests {
 
         executorService.execute(() -> {
 
-            OkHttpClient client = new OkHttpClient();
+            OkHttpClient client = new OkHttpClient.Builder()
+                    .connectTimeout(36000,TimeUnit.MILLISECONDS)
+                    .callTimeout(36000, TimeUnit.MILLISECONDS)
+                    .readTimeout(36000, TimeUnit.MILLISECONDS)
+                    .build();
 
             try {
-                String json = "{ \"usuario\": \"" + username + "\", \"senha\": \"" + password + "\" }";
+                String json = "{ \"usuario\": \"" + username + "\", \"senha\": \"" + password + "\", \"ip\": \"" + ip + "\", \"porta\": \"" + porta + "\" }";
 
                 RequestBody body = RequestBody.create(
                         json,
@@ -143,20 +231,18 @@ public class HttpRequests {
                 );
 
                 Request request = new Request.Builder()
-                        .url(endpoint + "/pppoe")
+                        .url(endpoint + "/alterarPppoe")
                         .addHeader("token_autenticacao", this.token)
                         .post(body)
                         .build();
 
-                try (Response response = client.newCall(request).execute()) {
-                    String resultado = response.body().string();
-                    Log.i("retornohttp_pppoe", resultado + "");
-                }
+                filtroRequest(client, request, escutas);
 
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                escutas.quandoErro(e.getMessage());
             }
 
+            escutas.quandoFinaliza();
         });
     }
 }

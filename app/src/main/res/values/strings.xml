@@ -6,4 +6,7 @@
     <string name="usuario">Usuário</string>
     <string name="senha">Senha</string>
     <string name="login">Acesso do Sistema</string>
+    <string name="senha_roteador">Senha do roteador</string>
+    <string name="roteador_ip_padrao">192.168.0.1</string>
+    <string name="roteador_porta_padrao">80</string>
 </resources>

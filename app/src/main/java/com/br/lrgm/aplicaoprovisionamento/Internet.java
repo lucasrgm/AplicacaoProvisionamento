@@ -1,7 +1,12 @@
 package com.br.lrgm.aplicaoprovisionamento;
 
-public class Internet{
-    public String transportType="", pppoe="", password="";
+import java.io.Serializable;
+
+/** Dados de acesso à internet (WAN) lidos do roteador. */
+public class Internet implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    public String transportType = "", pppoe = "", password = "";
 
     public String getTransportType() {
         return transportType;

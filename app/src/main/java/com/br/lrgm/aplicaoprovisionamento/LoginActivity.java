@@ -3,17 +3,9 @@ package com.br.lrgm.aplicaoprovisionamento;
 import android.app.ProgressDialog;
 import android.content.Intent;
 import android.os.Bundle;
-import android.util.Log;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
 import android.widget.Toast;
 
-import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import com.br.lrgm.aplicaoprovisionamento.databinding.ActivityTelaLoginBinding;
 import com.br.lrgm.aplicaoprovisionamento.http.ArmazenamentoLocal;
@@ -22,44 +14,71 @@ import com.br.lrgm.aplicaoprovisionamento.http.HttpRequests;
 
 public class LoginActivity extends AppCompatActivity {
 
-    ProgressDialog progressDialog;
+    private static final int MINIMO_CARACTERES = 4;
+
+    private ProgressDialog progressDialog;
+    private ActivityTelaLoginBinding binding;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        ActivityTelaLoginBinding binding = ActivityTelaLoginBinding.inflate(getLayoutInflater());
-
+        binding = ActivityTelaLoginBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
         progressDialog = new ProgressDialog(this);
         progressDialog.setTitle("Carregando");
         progressDialog.setMessage("Aguarde...");
+        progressDialog.setCancelable(false);
 
-        EditText usuario = binding.user;
-        EditText password = binding.password;
-        Button acessar = binding.acessar;
+        binding.acessar.setOnClickListener(v -> {
+            String valorUsuario = binding.user.getText().toString().trim();
+            String valorSenha = binding.password.getText().toString();
 
-        acessar.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                String valorUsuario = usuario.getText().toString();
-                String valorSenha = password.getText().toString();
-
-                if (valorUsuario.length() > 3 && valorSenha.length() > 3) {
-                    fazerLogin(valorUsuario, valorSenha);
-                } else {
-                    Toast.makeText(LoginActivity.this, "Acesso inválido! Falta de caracteres, mínimo 3.", Toast.LENGTH_LONG).show();
-                }
+            if (valorUsuario.length() >= MINIMO_CARACTERES && valorSenha.length() >= MINIMO_CARACTERES) {
+                fazerLogin(valorUsuario, valorSenha);
+            } else {
+                Toast.makeText(this, "Acesso inválido! Usuário e senha precisam ter no mínimo "
+                        + MINIMO_CARACTERES + " caracteres.", Toast.LENGTH_LONG).show();
             }
         });
 
-
+        // Se já existe uma sessão válida, vai direto para a busca do roteador.
+        if (!ArmazenamentoLocal.obterToken(this).isEmpty()) {
+            validarSessaoExistente();
+        }
     }
 
+    private void validarSessaoExistente() {
+        new HttpRequests(this).validarSessao(new HttpEscutas() {
+            @Override
+            public void quandoInicia() {
+                runOnUiThread(() -> binding.acessar.setEnabled(false));
+            }
+
+            @Override
+            public void quandoErro(String error) {
+            }
+
+            @Override
+            public void quandoSucesso(String mensagem) {
+                runOnUiThread(() -> irParaBuscaDoRoteador());
+            }
+
+            @Override
+            public void quandoLoginExpirado() {
+                runOnUiThread(() -> Toast.makeText(LoginActivity.this,
+                        "Sessão expirada, faça login novamente.", Toast.LENGTH_LONG).show());
+            }
+
+            @Override
+            public void quandoFinaliza() {
+                runOnUiThread(() -> binding.acessar.setEnabled(true));
+            }
+        });
+    }
 
     private void fazerLogin(String usuario, String senha) {
-
         new HttpRequests(this).login(usuario, senha, new HttpEscutas() {
             @Override
             public void quandoInicia() {
@@ -68,46 +87,30 @@ public class LoginActivity extends AppCompatActivity {
 
             @Override
             public void quandoErro(String error) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(LoginActivity.this, error, Toast.LENGTH_LONG).show();
-
-                    }
-                });
+                runOnUiThread(() -> Toast.makeText(LoginActivity.this, error, Toast.LENGTH_LONG).show());
             }
 
             @Override
             public void quandoSucesso(String token) {
-                ArmazenamentoLocal.salvarToken(LoginActivity.this, token);
-                irParaTelaPrincipal();
+                runOnUiThread(() -> irParaBuscaDoRoteador());
             }
 
             @Override
             public void quandoLoginExpirado() {
-
             }
 
             @Override
             public void quandoFinaliza() {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            Thread.sleep(500);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                        progressDialog.dismiss();
-                    }
+                runOnUiThread(() -> {
+                    if (progressDialog.isShowing()) progressDialog.dismiss();
                 });
             }
         });
     }
 
-    private void irParaTelaPrincipal(){
-        Intent intent = new Intent(this, BuscarDispositivoActivity.class);
-        startActivity(intent);
+    private void irParaBuscaDoRoteador() {
+        if (isFinishing()) return;
+        startActivity(new Intent(this, BuscarDispositivoActivity.class));
         finish();
     }
 }

@@ -42,14 +42,23 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:hint="Ip Roteador" />
+                android:hint="IP do roteador (ex.: 192.168.0.1)"
+                android:inputType="phone" />
 
             <EditText
                 android:id="@+id/enderecoPorta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Porta"
+                android:layout_marginBottom="8dp"
+                android:hint="Porta (ex.: 80)"
                 android:inputType="number" />
+
+            <EditText
+                android:id="@+id/senhaRoteador"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/senha_roteador"
+                android:inputType="textPassword" />
         </LinearLayout>
 
         <Button

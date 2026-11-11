@@ -2,11 +2,7 @@ package com.br.lrgm.aplicaoprovisionamento;
 
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
-import android.content.DialogInterface;
-import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -14,403 +10,249 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.br.lrgm.aplicaoprovisionamento.http.ArmazenamentoLocal;
-import com.br.lrgm.aplicaoprovisionamento.http.HttpEscutas;
+import com.br.lrgm.aplicaoprovisionamento.http.EscutasRoteador;
 import com.br.lrgm.aplicaoprovisionamento.http.HttpRequests;
 import com.br.lrgm.aplicaoprovisionamento.http.Parametros;
+import com.br.lrgm.aplicaoprovisionamento.http.TokenJwt;
+import com.br.lrgm.aplicaoprovisionamento.roteador.ResultadoOperacao;
 
+/** Tela de configuração: Wi-Fi e PPPoE lidos do roteador, cada grupo com o seu botão de envio. */
 public class PrincipalActivity extends AppCompatActivity {
 
-
-
     private LinearLayout layout5g, mainLayout;
-
-    ProgressBar
-            loadingLayout;
-    private Button botaoEnviarWifi1,botaoEnviarWifi2,botaoEnviarPppoe, botaoLogout;
-
+    private ProgressBar loadingLayout;
+    private SwipeRefreshLayout swipeRefresh;
+    private Button botaoEnviarWifi1, botaoEnviarWifi2, botaoEnviarPppoe, botaoLogout;
     private EditText ssid1, ssid2, password1, password2;
-
     private EditText pppoe, passpppoe;
 
     private Parametros parametros;
+    private String senhaRoteador;
 
-    private void preencherCampos(EditText campo1, EditText campo2, String valorCampo1, String valorCampo2) {
-        campo1.setText(valorCampo1);
-        campo2.setText(valorCampo2);
-    }
-
-    private void preencherCampos(EditText campo1, String valorCampo1) {
-        campo1.setText(valorCampo1);
-
-    }
-
-    private void mostrarLayout(View v, boolean mostrar) {
-        v.setVisibility(mostrar ? View.VISIBLE : View.GONE);
-    }
-
-
-
-    private void mostrarErro(String mensagem) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setMessage(mensagem);
-        builder.setTitle("Atenção!");
-        builder.setNegativeButton("Cancelar", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                dialog.dismiss();
-                PrincipalActivity.this.finish();
-            }
-        });
-        builder.setPositiveButton("Tentar novamente", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-
-                dialog.dismiss();
-
-            }
-        });
-
-        builder.create().show();
-    }
+    /** Evita sair da tela no meio de uma operação no roteador. */
+    private volatile boolean executando = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_principal);
-        this.mainLayout = findViewById(R.id.mainLayout);
-        this.layout5g = findViewById(R.id.layout_wifi2);
-        this.botaoEnviarWifi1 = findViewById(R.id.botaoEnviarWifi1);
-        this.botaoEnviarWifi2 = findViewById(R.id.botaoEnviarWifi2);
-        this.botaoEnviarPppoe = findViewById(R.id.botaoEnviarPppoe);
-        this.ssid1 = findViewById(R.id.ssid1);
-        this.password1 = findViewById(R.id.password1);
-        this.ssid2 = findViewById(R.id.ssid2);
-        this.password2 = findViewById(R.id.password2);
-        this.pppoe = findViewById(R.id.pppoe);
-        this.passpppoe = findViewById(R.id.passpppoe);
-        this.loadingLayout = findViewById(R.id.progressBar);
-        this.botaoLogout = findViewById(R.id.btnLogout);
 
-        //
-        this.botaoLogout.setOnClickListener(new View.OnClickListener() {
+        mainLayout = findViewById(R.id.mainLayout);
+        layout5g = findViewById(R.id.layout_wifi2);
+        botaoEnviarWifi1 = findViewById(R.id.botaoEnviarWifi1);
+        botaoEnviarWifi2 = findViewById(R.id.botaoEnviarWifi2);
+        botaoEnviarPppoe = findViewById(R.id.botaoEnviarPppoe);
+        ssid1 = findViewById(R.id.ssid1);
+        password1 = findViewById(R.id.password1);
+        ssid2 = findViewById(R.id.ssid2);
+        password2 = findViewById(R.id.password2);
+        pppoe = findViewById(R.id.pppoe);
+        passpppoe = findViewById(R.id.passpppoe);
+        loadingLayout = findViewById(R.id.progressBar);
+        botaoLogout = findViewById(R.id.btnLogout);
+        swipeRefresh = findViewById(R.id.swiperefresh);
+
+        botaoLogout.setOnClickListener(v -> Admin.logout(this));
+        botaoEnviarWifi1.setOnClickListener(v -> alterarWifi(false));
+        botaoEnviarWifi2.setOnClickListener(v -> alterarWifi(true));
+        botaoEnviarPppoe.setOnClickListener(v -> alterarPppoe());
+
+        swipeRefresh.setOnRefreshListener(this::obterParametros);
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
-            public void onClick(View v) {
-                Admin.logout(PrincipalActivity.this);
-            }
-        });
-
-        this.botaoEnviarWifi1.setOnClickListener(new View.OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-                alterarWifi(0);
-
-            }
-        });
-
-        this.botaoEnviarWifi2.setOnClickListener(new View.OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-                alterarWifi(1);
-
-            }
-        });
-
-        this.botaoEnviarPppoe.setOnClickListener(new View.OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-                alterarPppoe();
-
-            }
-        });
-
-
-        mostrarLayout(loadingLayout,true);
-        mostrarLayout(mainLayout,false);
-
-        try {
-            Bundle bundle = getIntent().getExtras();
-            String dados = bundle.getString("dados","");
-            this.parametros=Parametros.extrair(dados);
-            this.pppoe.setText(parametros.internet.pppoe);
-            this.passpppoe.setText(parametros.internet.password);
-
-            for(Wifi wifi:parametros.listaWifi){
-                if (wifi.band != null && wifi.band.equalsIgnoreCase("2.4GHz")) {
-                    preencherCampos(this.ssid1, this.password1, wifi.ssid, wifi.password);
-                }
-                else if (wifi.band != null && wifi.band.equalsIgnoreCase("5GHz")) {
-                    preencherCampos(this.ssid2, this.password2, wifi.ssid, wifi.password);
+            public void handleOnBackPressed() {
+                if (executando) {
+                    Toast.makeText(PrincipalActivity.this,
+                            "Aguarde a operação terminar.", Toast.LENGTH_SHORT).show();
+                } else {
+                    finish();
                 }
             }
-        } catch (Exception e) {
-            Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();
-            //throw new RuntimeException(e);
+        });
+
+        senhaRoteador = getIntent().getStringExtra(BuscarDispositivoActivity.EXTRA_SENHA_ROTEADOR);
+        parametros = getIntent().getSerializableExtra(BuscarDispositivoActivity.EXTRA_PARAMETROS,
+                Parametros.class);
+
+        if (parametros == null) {
+            Toast.makeText(this, "Não foi possível abrir os parâmetros do roteador.",
+                    Toast.LENGTH_LONG).show();
+            finish();
+            return;
         }
-        verificarAcesso();
 
-
-        SwipeRefreshLayout  sw=findViewById(R.id.swiperefresh);
-        sw.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
-            @Override
-            public void onRefresh() {
-                obterParametros();
-                sw.setRefreshing(false);
-            }
-        });
-    }
-
-    private void
-    verificarAcesso() {
-        Handler
-                handler = new Handler(Looper.getMainLooper());
-
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                String token = ArmazenamentoLocal.obterToken(PrincipalActivity.this);
-                if (token.isEmpty()){
-                    Admin.logout(PrincipalActivity.this);
-                }else{
-                    mostrarLayout(loadingLayout,false);
-                    mostrarLayout(mainLayout,true);
-
-                }
-            }
-        }, 3000);
-
-
-    }
-
-    private void alterarWifi(int network){
-        String ssid;
-        String password;
-        if (network == 0){
-            ssid = this.ssid1.getText().toString();
-            password = this.password1.getText().toString();
-        }else{
-            ssid = this.ssid2.getText().toString();
-            password = this.password2.getText().toString();
+        if (!TokenJwt.valido(ArmazenamentoLocal.obterToken(this))) {
+            Admin.irParaTelaLogin(this);
+            return;
         }
-            ProgressDialog progressDialog = new ProgressDialog(PrincipalActivity.this);
-            progressDialog.setTitle("Alterando Parametros...");
-        progressDialog.setMessage("Aguarde...");
-        progressDialog.setCancelable(false);
 
-        String ip = this.parametros.ip;
-            String porta = this.parametros.porta;
-
-        new HttpRequests(this).alterarWifi(ip,porta,ssid,password,network, new HttpEscutas() {
-
-            @Override
-            public void quandoInicia() {
-                executing=true;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        progressDialog.show();
-                    }
-                });
-
-            }
-
-            @Override
-            public void quandoErro(String error) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(PrincipalActivity.this, error, Toast.LENGTH_LONG).show();
-
-                    }
-                });
-            }
-
-            @Override
-            public void quandoSucesso(String mensagem) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(PrincipalActivity.this, mensagem, Toast.LENGTH_LONG).show();
-
-                    }
-                });
-            }
-
-            @Override
-            public void quandoLoginExpirado() {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Admin.irParaTelaLogin(PrincipalActivity.this);
-                    }
-                });
-            }
-
-            @Override
-            public void quandoFinaliza() {
-                executing=false;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        progressDialog.dismiss();
-                    }
-                });
-            }
-        });
+        preencherCampos();
+        mostrar(loadingLayout, false);
+        mostrar(mainLayout, true);
     }
 
-    private void alterarPppoe(){
-            String pppoe = this.pppoe.getText().toString();
-            String passpppoe = this.passpppoe.getText().toString();
-        ProgressDialog progressDialog = new ProgressDialog(PrincipalActivity.this);
-        progressDialog.setTitle("Alterando Parametros...");
-        progressDialog.setMessage("Aguarde...");
-        progressDialog.setCancelable(false);
+    private void preencherCampos() {
+        Wifi rede24 = parametros.obterWifi(false);
+        Wifi rede5 = parametros.obterWifi(true);
 
-        String ip = this.parametros.ip;
-        String porta = this.parametros.porta;
+        ssid1.setText(rede24 == null ? "" : rede24.ssid);
+        password1.setText(rede24 == null ? "" : rede24.password);
 
-        new HttpRequests(this).alterarPppoe(ip,porta,pppoe,passpppoe, new HttpEscutas() {
+        // O TL-WR840N tem apenas a rede de 2,4 GHz: o bloco de 5 GHz só aparece
+        // em modelos que informarem essa faixa.
+        mostrar(layout5g, rede5 != null);
+        if (rede5 != null) {
+            ssid2.setText(rede5.ssid);
+            password2.setText(rede5.password);
+        }
 
-            @Override
-            public void quandoInicia() {
-                executing=true;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        progressDialog.show();
-                    }
-                });
-
-            }
-
-            @Override
-            public void quandoErro(String error) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(PrincipalActivity.this, error, Toast.LENGTH_LONG).show();
-
-                    }
-                });
-            }
-
-            @Override
-            public void quandoSucesso(String mensagem) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(PrincipalActivity.this, mensagem, Toast.LENGTH_LONG).show();
-
-                    }
-                });
-            }
-
-            @Override
-            public void quandoLoginExpirado() {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Admin.irParaTelaLogin(PrincipalActivity.this);
-                    }
-                });
-            }
-
-            @Override
-            public void quandoFinaliza() {
-                executing=false;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        progressDialog.dismiss();
-                    }
-                });
-            }
-        });
+        pppoe.setText(parametros.internet.pppoe);
+        passpppoe.setText(parametros.internet.password);
     }
 
-    private void obterParametros(){
-        String ip = this.parametros.ip;
-        String porta = this.parametros.porta;
-        ProgressDialog progressDialog = new ProgressDialog(PrincipalActivity.this);
-        progressDialog.setTitle("Obtendo Parametros");
-        progressDialog.setMessage("Aguarde...");
-        progressDialog.setCancelable(false);
-
-        new HttpRequests(this).obterParametros(ip, porta, new HttpEscutas() {
-
-            @Override
-            public void quandoInicia() {
-                executing=true;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        progressDialog.show();
-                    }
-                });
-
-            }
-
-            @Override
-            public void quandoErro(String error) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(PrincipalActivity.this, error, Toast.LENGTH_LONG).show();
-
-                    }
-                });
-            }
-
-            @Override
-            public void quandoSucesso(String mensagem) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Toast.makeText(PrincipalActivity.this, mensagem, Toast.LENGTH_LONG).show();
-
-                    }
-                });
-            }
-
-            @Override
-            public void quandoLoginExpirado() {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        Admin.irParaTelaLogin(PrincipalActivity.this);
-                    }
-                });
-            }
-
-            @Override
-            public void quandoFinaliza() {
-                executing=false;
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        progressDialog.dismiss();
-                    }
-                });
-            }
-        });
+    private void mostrar(View v, boolean visivel) {
+        v.setVisibility(visivel ? View.VISIBLE : View.GONE);
     }
 
-    boolean executing=false;
-
-    @Override
-    public void onBackPressed() {
-        if(!executing)  super.onBackPressed();
+    private ProgressDialog criarProgresso(String titulo) {
+        ProgressDialog dialogo = new ProgressDialog(this);
+        dialogo.setTitle(titulo);
+        dialogo.setMessage("Aguarde...");
+        dialogo.setCancelable(false);
+        return dialogo;
     }
 
-    @Override
-    public boolean onNavigateUp() {
-        return false;
+    private void alterarWifi(boolean cincoGHz) {
+        Wifi rede = parametros.obterWifi(cincoGHz);
+        if (rede == null) {
+            Toast.makeText(this, "Este roteador não tem essa rede.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String ssid = (cincoGHz ? ssid2 : ssid1).getText().toString();
+        String senha = (cincoGHz ? password2 : password1).getText().toString();
+
+        new HttpRequests(this).alterarWifi(parametros.ip, parametros.porta, senhaRoteador,
+                rede.pilha, ssid, senha, new EscutasAlteracao("Alterando Wi-Fi...") {
+                    @Override
+                    void aoConcluir(ResultadoOperacao resultado) {
+                        rede.ssid = ssid;
+                        rede.password = senha;
+                    }
+                });
+    }
+
+    private void alterarPppoe() {
+        String usuario = pppoe.getText().toString();
+        String senha = passpppoe.getText().toString();
+
+        new HttpRequests(this).alterarPppoe(parametros.ip, parametros.porta, senhaRoteador,
+                usuario, senha, new EscutasAlteracao("Alterando PPPoE...") {
+                    @Override
+                    void aoConcluir(ResultadoOperacao resultado) {
+                        parametros.internet.pppoe = usuario;
+                        parametros.internet.password = senha;
+                    }
+                });
+    }
+
+    private void obterParametros() {
+        new HttpRequests(this).obterParametros(parametros.ip, parametros.porta, senhaRoteador,
+                new EscutasRoteador<Parametros>() {
+                    @Override
+                    public void quandoInicia() {
+                        executando = true;
+                    }
+
+                    @Override
+                    public void quandoErro(String erro) {
+                        runOnUiThread(() -> Toast.makeText(PrincipalActivity.this, erro,
+                                Toast.LENGTH_LONG).show());
+                    }
+
+                    @Override
+                    public void quandoSucesso(Parametros novos) {
+                        runOnUiThread(() -> {
+                            parametros = novos;
+                            preencherCampos();
+                            Toast.makeText(PrincipalActivity.this, "Parâmetros atualizados!",
+                                    Toast.LENGTH_SHORT).show();
+                        });
+                    }
+
+                    @Override
+                    public void quandoLoginExpirado() {
+                        runOnUiThread(() -> Admin.irParaTelaLogin(PrincipalActivity.this));
+                    }
+
+                    @Override
+                    public void quandoFinaliza() {
+                        executando = false;
+                        runOnUiThread(() -> swipeRefresh.setRefreshing(false));
+                    }
+                });
+    }
+
+    /** Tratamento comum das alterações: progresso, mensagem de sucesso ou de falha. */
+    private abstract class EscutasAlteracao implements EscutasRoteador<ResultadoOperacao> {
+        private final ProgressDialog progresso;
+
+        EscutasAlteracao(String titulo) {
+            progresso = criarProgresso(titulo);
+        }
+
+        /** Chamado na thread da tela quando o roteador aceitou a configuração. */
+        abstract void aoConcluir(ResultadoOperacao resultado);
+
+        @Override
+        public void quandoInicia() {
+            executando = true;
+            runOnUiThread(progresso::show);
+        }
+
+        @Override
+        public void quandoErro(String erro) {
+            runOnUiThread(() -> new AlertDialog.Builder(PrincipalActivity.this)
+                    .setTitle("Falha")
+                    .setMessage(erro)
+                    .setPositiveButton("OK", null)
+                    .show());
+        }
+
+        @Override
+        public void quandoSucesso(ResultadoOperacao resultado) {
+            runOnUiThread(() -> {
+                aoConcluir(resultado);
+                if (resultado.confirmado) {
+                    Toast.makeText(PrincipalActivity.this, resultado.mensagem,
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    new AlertDialog.Builder(PrincipalActivity.this)
+                            .setTitle("Atenção")
+                            .setMessage(resultado.mensagem)
+                            .setPositiveButton("OK", null)
+                            .show();
+                }
+            });
+        }
+
+        @Override
+        public void quandoLoginExpirado() {
+            runOnUiThread(() -> Admin.irParaTelaLogin(PrincipalActivity.this));
+        }
+
+        @Override
+        public void quandoFinaliza() {
+            executando = false;
+            runOnUiThread(() -> {
+                if (progresso.isShowing()) progresso.dismiss();
+            });
+        }
     }
 }

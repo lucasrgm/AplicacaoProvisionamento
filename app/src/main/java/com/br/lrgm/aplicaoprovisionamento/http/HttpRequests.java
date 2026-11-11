@@ -1,10 +1,19 @@
 package com.br.lrgm.aplicaoprovisionamento.http;
 
 import android.app.Activity;
-import android.content.Context;
 import android.util.Log;
 
 import com.br.lrgm.aplicaoprovisionamento.R;
+import com.br.lrgm.aplicaoprovisionamento.roteador.RedeLocal;
+import com.br.lrgm.aplicaoprovisionamento.roteador.ResultadoOperacao;
+import com.br.lrgm.aplicaoprovisionamento.roteador.Roteador;
+import com.br.lrgm.aplicaoprovisionamento.roteador.RoteadorException;
+import com.br.lrgm.aplicaoprovisionamento.roteador.TLWR840N;
+import com.br.lrgm.aplicaoprovisionamento.roteador.TransporteOkHttp;
+import com.br.lrgm.aplicaoprovisionamento.roteador.TravaRoteador;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
@@ -17,232 +26,214 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
+/**
+ * Ponto único de acesso às operações do app:
+ * <ul>
+ *   <li>backend (API REST/JSON): login e validação do token JWT;</li>
+ *   <li>roteador: leitura e alteração dos parâmetros, feitas diretamente no equipamento.</li>
+ * </ul>
+ */
 public class HttpRequests {
-    private String  endpoint;
-    private Activity context;
-    String  token;
+
+    private static final String TAG = "HttpRequests";
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool();
+
+    private final String endpoint;
+    private final Activity context;
+    private String token;
+
     public HttpRequests(Activity context) {
         this.context = context;
-        this.endpoint=context.getString(R.string.endpoint_url);
+        this.endpoint = context.getString(R.string.endpoint_url);
         this.token = ArmazenamentoLocal.obterToken(context);
     }
-    public void login(String username, String password,HttpEscutas escutas) {
 
-        ExecutorService executorService= Executors.newSingleThreadExecutor();
+    // ------------------------------------------------------------------
+    // Backend
+    // ------------------------------------------------------------------
 
+    public void login(String username, String password, HttpEscutas escutas) {
         escutas.quandoInicia();
 
-        executorService.execute(()-> {
-
-
-            OkHttpClient Client = new OkHttpClient();
-
+        EXECUTOR.execute(() -> {
             try {
-                RequestBody body = RequestBody.create("{\"username\":\"" + username + "\", \"password\":\"" + password + "\"}", MediaType.get("application/json"));
-                Request request = new Request.Builder().url(endpoint + "/login")
-                        //.addHeader("token_autenticacao",this.token)
-                        .post(body)
+                JSONObject corpo = new JSONObject();
+                corpo.put("username", username);
+                corpo.put("password", password);
+
+                Request request = new Request.Builder()
+                        .url(endpoint + "/login")
+                        .post(RequestBody.create(corpo.toString(), JSON))
                         .build();
-                try (Response response = Client.newCall(request).execute()) {
-                    String resultado = response.body().string();
-                    Log.i("retornohttp", resultado + "");
-                    if(resultado.contains("error")){
 
-                        escutas.quandoErro(resultado);
-                    }else{
-                        //extrair o token
-                        try {
-                            org.json.JSONObject json = new org.json.JSONObject(resultado);
+                try (Response response = clienteBackend().newCall(request).execute()) {
+                    JSONObject json = lerJson(response);
+                    String novoToken = json.optString("token", "");
 
-                            if (json.has("token")) {
-                                this.token = json.getString("token");
-                                Log.i("TOKEN", this.token);
-                                escutas.quandoSucesso(this.token);
-                            } else {
-                                Log.e("TOKEN", "Token não encontrado na resposta");
-                                throw new Exception("Token não encontrado. Não foi possível autenticar!");
-                            }
-
-                        } catch (Exception e) {
-                            Log.e("TOKEN", "Erro ao extrair token", e);
-                            escutas.quandoErro(e.getMessage());
-                        }
-
-
+                    if (response.isSuccessful() && !novoToken.isEmpty()) {
+                        this.token = novoToken;
+                        ArmazenamentoLocal.salvarToken(context, novoToken);
+                        escutas.quandoSucesso(novoToken);
+                    } else {
+                        escutas.quandoErro(json.optString("error",
+                                "Não foi possível fazer login (HTTP " + response.code() + ")."));
                     }
                 }
+            } catch (IOException e) {
+                escutas.quandoErro("Não foi possível conectar ao servidor. Verifique a conexão!");
             } catch (Exception e) {
-                Log.e("TOKEN", e.getMessage());
+                Log.e(TAG, "Erro no login", e);
                 escutas.quandoErro("Erro interno, tente novamente!");
-                //throw new RuntimeException(e);
+            } finally {
+                escutas.quandoFinaliza();
             }
-
-            escutas.quandoFinaliza();
-
         });
     }
 
-    private void filtroRequest(OkHttpClient client, Request request, HttpEscutas escutas)throws Exception{
-        try (Response response = client.newCall(request).execute()) {
-            if(response.code()==401) {
-                escutas.quandoLoginExpirado();
-            }else{
-
-                String resultado = response.body().string();
-                Log.i("retornohttp_parametros", resultado + "");
-                escutas.quandoSucesso(resultado);
-            }
-        }
-    }
-    public void obterParametros(String ip, String porta, HttpEscutas escutas){
-
+    /**
+     * Confere se a sessão do técnico ainda vale. Primeiro pela data de expiração do token
+     * e, se o servidor estiver acessível, pela rota protegida /validarToken.
+     * Sem conexão com o servidor, vale a data de expiração do próprio token.
+     */
+    public void validarSessao(HttpEscutas escutas) {
         escutas.quandoInicia();
 
-       if(!validarAcesso(ip,porta,escutas)) return;
+        if (!TokenJwt.valido(token)) {
+            ArmazenamentoLocal.limparToken(context);
+            escutas.quandoLoginExpirado();
+            escutas.quandoFinaliza();
+            return;
+        }
 
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
-
-        executorService.execute(() -> {
-
-            OkHttpClient client = new OkHttpClient();
-
+        EXECUTOR.execute(() -> {
             try {
                 Request request = new Request.Builder()
-                        .url(endpoint + "/obterParametros?ip="+ip+"&porta="+porta)
-                        .addHeader("token_autenticacao", this.token)
+                        .url(endpoint + "/validarToken")
+                        .header("token_autenticacao", token)
                         .get()
                         .build();
 
-                    filtroRequest(client, request, escutas);
-
-            } catch (Exception e) {
-                escutas.quandoErro(e.getMessage());
-                //throw new RuntimeException(e);
+                try (Response response = clienteBackend().newCall(request).execute()) {
+                    if (response.code() == 401) {
+                        ArmazenamentoLocal.limparToken(context);
+                        escutas.quandoLoginExpirado();
+                    } else {
+                        escutas.quandoSucesso("Sessão válida");
+                    }
+                }
+            } catch (IOException e) {
+                // Servidor fora de alcance (ex.: celular na rede do roteador sem internet).
+                escutas.quandoSucesso("Sessão válida (sem conexão com o servidor)");
+            } finally {
+                escutas.quandoFinaliza();
             }
-            escutas.quandoFinaliza();
         });
     }
-    private boolean validarAcesso(String ip, String porta,HttpEscutas   escutas){
-        if(!ip.matches("^\\d+.\\d+.\\d+.\\d+")){
 
-            escutas.quandoErro("Endereço ip inválido!");
+    // ------------------------------------------------------------------
+    // Roteador (comunicação direta com o equipamento)
+    // ------------------------------------------------------------------
+
+    public void obterParametros(String ip, String porta, String senhaRoteador,
+                                EscutasRoteador<Parametros> escutas) {
+        executarNoRoteador(ip, porta, senhaRoteador, escutas, Roteador::obterParametros);
+    }
+
+    public void alterarWifi(String ip, String porta, String senhaRoteador, String pilha,
+                            String ssid, String senhaWifi,
+                            EscutasRoteador<ResultadoOperacao> escutas) {
+        executarNoRoteador(ip, porta, senhaRoteador, escutas,
+                roteador -> exigirSucesso(roteador.alterarWifi(pilha, ssid, senhaWifi)));
+    }
+
+    public void alterarPppoe(String ip, String porta, String senhaRoteador,
+                             String usuarioPppoe, String senhaPppoe,
+                             EscutasRoteador<ResultadoOperacao> escutas) {
+        executarNoRoteador(ip, porta, senhaRoteador, escutas,
+                roteador -> exigirSucesso(roteador.alterarPppoe(usuarioPppoe, senhaPppoe)));
+    }
+
+    /** Cria a implementação do modelo de roteador. Novos modelos entram aqui. */
+    protected Roteador criarRoteador(String ip, String porta, String senhaRoteador) {
+        TransporteOkHttp transporte = new TransporteOkHttp(RedeLocal.socketFactory(context));
+        return new TLWR840N(ip, porta, TLWR840N.USUARIO_PADRAO, senhaRoteador, transporte);
+    }
+
+    private interface Operacao<T> {
+        T executar(Roteador roteador) throws RoteadorException;
+    }
+
+    private <T> void executarNoRoteador(String ip, String porta, String senhaRoteador,
+                                        EscutasRoteador<T> escutas, Operacao<T> operacao) {
+        escutas.quandoInicia();
+
+        String erro = Validacao.validarEndereco(ip, porta);
+        if (erro == null && (senhaRoteador == null || senhaRoteador.isEmpty())) {
+            erro = "Informe a senha do roteador!";
+        }
+        if (erro != null) {
+            escutas.quandoErro(erro);
             escutas.quandoFinaliza();
-            return  false;
+            return;
         }
 
-        if(!porta.matches("^\\d{0,5}")){
-
-            escutas.quandoErro("Porta inválida!");
-            escutas.quandoFinaliza();
-            return  false;
-        }
-
-        if (this.token.isEmpty()) {
-            Log.e("http", "Token não definido!");
+        // RF02: sessão expirada leva o técnico de volta ao login.
+        if (!TokenJwt.valido(token)) {
+            ArmazenamentoLocal.limparToken(context);
             escutas.quandoLoginExpirado();
             escutas.quandoFinaliza();
-            return  false;
+            return;
         }
 
-        return true;
-    }
-    public void alterarWifi(String  ip,String porta,String ssid, String password,int network, HttpEscutas escutas){
-
-        escutas.quandoInicia();
-
-        if(!validarAcesso(ip,porta,escutas))    return;
-
-        if (ssid.isEmpty()){
-            escutas.quandoErro("SSID não pode ser vazio!");
+        // CT08: uma operação por vez no mesmo roteador.
+        String chave = TravaRoteador.chave(ip, porta);
+        if (!TravaRoteador.travar(chave)) {
+            escutas.quandoErro("Roteador ocupado! Aguarde a operação em andamento terminar.");
             escutas.quandoFinaliza();
             return;
         }
 
-        if (password.isEmpty() || password.length() <  8){
-            escutas.quandoErro("Senha precisa ter no mínimo 8 dígitos!");
-            escutas.quandoFinaliza();
-            return;
-        }
-
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
-
-        executorService.execute(() -> {
-
-            OkHttpClient client = new OkHttpClient.Builder().connectTimeout(36000,TimeUnit.MILLISECONDS).callTimeout(36000, TimeUnit.MILLISECONDS).readTimeout(36000, TimeUnit.MILLISECONDS).build();
-
+        EXECUTOR.execute(() -> {
             try {
-                String json = "{ \"network\": \"" + network + "\" , \"ssid\": \"" + ssid + "\", \"senha\": \"" + password + "\", \"ip\": \"" + ip + "\", \"porta\": \"" + porta + "\" }";
-
-                RequestBody body = RequestBody.create(
-                        json,
-                        MediaType.get("application/json")
-                );
-
-                Request request = new Request.Builder()
-                        .url(endpoint + "/alterarWifi")
-                        .addHeader("token_autenticacao", this.token)
-                        .post(body)
-                        .build();
-
-                filtroRequest(client, request, escutas);
-
-            } catch (Exception e) {
+                Roteador roteador = criarRoteador(ip, porta, senhaRoteador);
+                escutas.quandoSucesso(operacao.executar(roteador));
+            } catch (RoteadorException e) {
                 escutas.quandoErro(e.getMessage());
-                //throw new RuntimeException(e);
+            } catch (Exception e) {
+                Log.e(TAG, "Erro na operação com o roteador", e);
+                escutas.quandoErro("Erro inesperado na comunicação com o roteador.");
+            } finally {
+                TravaRoteador.liberar(chave);
+                escutas.quandoFinaliza();
             }
-            escutas.quandoFinaliza();
         });
     }
 
-    public void alterarPppoe(String ip, String porta, String username, String password, HttpEscutas escutas){
+    private static ResultadoOperacao exigirSucesso(ResultadoOperacao resultado)
+            throws RoteadorException {
+        if (!resultado.sucesso) throw new RoteadorException(resultado.mensagem);
+        return resultado;
+    }
 
-        escutas.quandoInicia();
+    // ------------------------------------------------------------------
+    // Utilitários
+    // ------------------------------------------------------------------
 
-        if(!validarAcesso(ip,porta,escutas)) return;
+    private static OkHttpClient clienteBackend() {
+        return new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .callTimeout(20, TimeUnit.SECONDS)
+                .build();
+    }
 
-        if (username.isEmpty()){
-            escutas.quandoErro("Usuário não pode ser vazio!");
-            escutas.quandoFinaliza();
-            return;
+    private static JSONObject lerJson(Response response) throws IOException {
+        String texto = response.body() == null ? "" : response.body().string();
+        try {
+            return new JSONObject(texto);
+        } catch (JSONException e) {
+            return new JSONObject();
         }
-
-        if (password.isEmpty() || password.length() <  8){
-            escutas.quandoErro("Senha precisa ter no mínimo 8 dígitos!");
-            escutas.quandoFinaliza();
-            return;
-        }
-
-        ExecutorService executorService = Executors.newSingleThreadExecutor();
-
-        executorService.execute(() -> {
-
-            OkHttpClient client = new OkHttpClient.Builder()
-                    .connectTimeout(36000,TimeUnit.MILLISECONDS)
-                    .callTimeout(36000, TimeUnit.MILLISECONDS)
-                    .readTimeout(36000, TimeUnit.MILLISECONDS)
-                    .build();
-
-            try {
-                String json = "{ \"usuario\": \"" + username + "\", \"senha\": \"" + password + "\", \"ip\": \"" + ip + "\", \"porta\": \"" + porta + "\" }";
-
-                RequestBody body = RequestBody.create(
-                        json,
-                        MediaType.get("application/json")
-                );
-
-                Request request = new Request.Builder()
-                        .url(endpoint + "/alterarPppoe")
-                        .addHeader("token_autenticacao", this.token)
-                        .post(body)
-                        .build();
-
-                filtroRequest(client, request, escutas);
-
-            } catch (Exception e) {
-                escutas.quandoErro(e.getMessage());
-            }
-
-            escutas.quandoFinaliza();
-        });
     }
 }

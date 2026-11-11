@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A interface de gerenciamento do TL-WR840N e o backend do protótipo usam HTTP sem
+    criptografia. Como o IP do roteador é informado pelo técnico (e o Android não aceita
+    faixas de IP aqui), o HTTP é liberado para o app. Na versão de produção, o backend
+    deve usar HTTPS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
